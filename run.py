@@ -229,7 +229,7 @@ class Run():
 
             
             # Store UID and RMSE values in a CSV file
-            filename = 'rev_rmse_3_7_T3_MF.csv'
+            filename = 'rev_rmse_5_5_T4_DNN.csv'
             with open(filename, 'w', newline='') as file:
                 writer = csv.writer(file)
                 writer.writerow(['UID', 'MAE', 'RMSE'])  # Write header
