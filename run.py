@@ -35,7 +35,7 @@ class Run():
         self.num_fields = config['num_fields']
         self.lr = config['lr']
         self.wd = config['wd']
-
+        
         self.input_root = self.root + 'ready/_' + str(int(self.ratio[0] * 10)) + '_' + str(int(self.ratio[1] * 10)) + \
             '/tgt_' + self.tgt + '_src_' + self.src
         self.src_path = self.input_root + '/train_src.csv'
@@ -48,7 +48,7 @@ class Run():
                         'emcdr_mae': 10, 'emcdr_rmse': 10,
                         'ptupcdr_mae': 10, 'ptupcdr_rmse': 10}
         
-        
+        self.filename = config['filename']
 
     def seq_extractor(self, x):
         x = x.rstrip(']').lstrip('[').split(', ')
@@ -92,8 +92,8 @@ class Run():
                 X = X.cuda()
                 y = y.cuda()
             dataset = TensorDataset(X, y)
-            #data_iter = DataLoader(dataset, batchsize, shuffle=True)
-            data_iter = DataLoader(dataset, 21, shuffle=False)
+            data_iter = DataLoader(dataset, batchsize, shuffle=True)
+            #data_iter = DataLoader(dataset, 21, shuffle=False)
 
             return data_iter
 
@@ -376,7 +376,7 @@ class Run():
         print(f"Length of targets: {len(targets)}, Length of predicts: {len(predicts)}")
 
         return loss(targets, predicts).item(), torch.sqrt(mse_loss(targets, predicts)).item()
-    def eval_mae_last_epochs(self, model, data_loader, stage):
+    def eval_mae_last_epochs(self, model, data_loader, algo, stage):
         print('Evaluating MAE:')
         model.eval()
         targets, predicts = list(), list()
@@ -418,8 +418,13 @@ class Run():
                 user_rmse_dict[user_id] = [user_mae_ind, user_rmse_ind]
 
             
+            # Remove '_ptudata' from both src and tgt
+            src_cleaned = self.src.replace('_ptudata', '')
+            tgt_cleaned = self.tgt.replace('_ptudata', '')
+    
             # Store UID and RMSE values in a CSV file
-            filename = '/scratch/dmeher/Research-PTUPCDR/results_llmasrec/rmse_ptu_full_T1_8_2.csv'
+            path = "./results_cs798/"
+            filename = path + src_cleaned + tgt_cleaned + "_" + algo + "_" + self.filename
             with open(filename, 'w', newline='') as file:
                 writer = csv.writer(file)
                 writer.writerow(['UID', 'MAE', 'RMSE'])  # Write header
@@ -474,7 +479,17 @@ class Run():
         print('=========TgtOnly========')
         for i in range(self.epoch):
             self.train(data_tgt, model, criterion, optimizer, i, stage='train_tgt')
-            mae, rmse = self.eval_mae_rating_ranking(model, data_test, stage='test_tgt')
+            #===========ORIGINAL CODE======================
+            #mae, rmse = self.eval_mae(model, data_test, stage='test_tgt')
+            #==============================================
+            #===========RANKING MATRIX FOR LLMasRec PROJECT==============
+            #mae, rmse = self.eval_mae_rating_ranking(model, data_test, stage='test_tgt')
+            #============================================================
+            if i==self.epoch-1:
+                mae, rmse = self.eval_mae_last_epochs(model, data_test,'tgt', stage='test_tgt')
+            else:
+                mae, rmse = self.eval_mae(model, data_test, stage='test_tgt')
+            
             self.update_results(mae, rmse, 'tgt')
             print('MAE: {} RMSE: {}'.format(mae, rmse))
 
@@ -482,7 +497,16 @@ class Run():
         print('=========DataAug========')
         for i in range(self.epoch):
             self.train(data_aug, model, criterion, optimizer, i, stage='train_aug')
-            mae, rmse = self.eval_mae_rating_ranking(model, data_test, stage='test_aug')
+            #=============ORIGINAL CODE==============
+            #mae, rmse = self.eval_mae(model, data_test, stage='test_aug')
+            #========================================
+            #=============RANKING MATRIX FOR LLMasREC PROJECT====================
+            #mae, rmse = self.eval_mae_rating_ranking(model, data_test, stage='test_aug')
+            #====================================================================
+            if i== self.epoch-1:
+                mae, rmse = self.eval_mae_last_epochs(model, data_test,'cmf', stage='test_aug')
+            else:
+                mae, rmse = self.eval_mae(model, data_test, stage='test_aug')
             self.update_results(mae, rmse, 'aug')
             print('MAE: {} RMSE: {}'.format(mae, rmse))
 
@@ -494,7 +518,17 @@ class Run():
         print('==========EMCDR==========')
         for i in range(self.epoch): 
             self.train(data_map, model, criterion, optimizer_map, i, stage='train_map', mapping=True)
-            mae, rmse = self.eval_mae_rating_ranking(model, data_test, stage='test_map')
+            #===============ORIGINAL CODE========================
+            #mae, rmse = self.eval_mae(model, data_test, stage='test_map')
+            #====================================================
+            #===============RANKING MATRIX FOR LLMasRec PROJECT========================
+            #mae, rmse = self.eval_mae_rating_ranking(model, data_test, stage='test_map')
+            #====================================================
+
+            if i == self.epoch-1:
+                mae, rmse = self.eval_mae_last_epochs(model, data_test,'emcdr', stage='test_map')
+            else:
+                mae, rmse = self.eval_mae(model, data_test, stage='test_map')
             self.update_results(mae, rmse, 'emcdr')
             print('MAE: {} RMSE: {}'.format(mae, rmse))
         
@@ -502,17 +536,13 @@ class Run():
         for i in range(self.epoch):#self.epoch
             self.train(data_meta, model, criterion, optimizer_meta, i, stage='train_meta')
             
-            #if i == self.epoch - 1:
-                #mae, rmse = self.eval_mae_last_epochs(model, data_test, stage='test_meta')
-            #else:
-            # Set print options to display more rows and columns
-            #torch.set_printoptions(threshold=10_000, linewidth=200)
-            #print("PTU Data Test")
-            #for i, (inputs, targets) in enumerate(data_test):
-             #   print(inputs, targets)
-              #  if i == 4:  # Zero-based index, so i == 4 means five records have been printed
-               #     break
-            mae, rmse = self.eval_mae_rating_ranking(model, data_test, stage='test_meta')
+            if i == self.epoch - 1:
+                mae, rmse = self.eval_mae_last_epochs(model, data_test,'ptupcdr', stage='test_meta')
+            else:
+                mae, rmse = self.eval_mae(model, data_test, stage='test_meta') 
+            #=============RANKING MATRIX FOR LLMAsRec Project=====================
+            #mae, rmse = self.eval_mae_rating_ranking(model, data_test, stage='test_meta')
+            #=====================================================================
             self.update_results(mae, rmse, 'ptupcdr')
             print('MAE: {} RMSE: {}'.format(mae, rmse))
 
